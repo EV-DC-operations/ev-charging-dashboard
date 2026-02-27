@@ -251,7 +251,7 @@ with st.sidebar:
     else:
         st.warning("⚠️ ไม่สามารถเชื่อมต่อ Database")
     
-    st.markdown("##### 📱 Version 3.0")
+    st.markdown("##### 📱 Version 3.1")
     st.markdown("##### Made with Streamlit + Supabase")
 
 # ==========================================
@@ -381,7 +381,23 @@ elif page == "🌧️ ความเสี่ยงน้ำท่วม":
     )
     
     if not df_flood.empty and 'risk_level' in df_flood.columns:
-        df_filtered = df_flood[df_flood['risk_level'].isin(risk_filter)]
+        # Merge with stations to get station_name
+        if not df_stations.empty:
+            df_flood_display = df_flood.merge(
+                df_stations[['station_id', 'station_name', 'province']], 
+                on='station_id', 
+                how='left'
+            )
+            # Reorder columns - station_name first
+            cols = ['station_id', 'station_name', 'province', 'risk_level', 'risk_score', 
+                    'rain_3d_total', 'rain_7d_total', 'rain_day1', 'rain_day2', 'rain_day3', 
+                    'rain_day4', 'rain_day5', 'rain_day6', 'rain_day7', 'updated_at']
+            cols = [c for c in cols if c in df_flood_display.columns]
+            df_flood_display = df_flood_display[cols]
+        else:
+            df_flood_display = df_flood
+        
+        df_filtered = df_flood_display[df_flood_display['risk_level'].isin(risk_filter)]
         
         # Summary
         col1, col2, col3, col4 = st.columns(4)
@@ -450,7 +466,22 @@ elif page == "🔧 ตาราง PM":
     )
     
     if not df_pm.empty and 'pm_status' in df_pm.columns:
-        df_pm_filtered = df_pm[df_pm['pm_status'].isin(status_filter)]
+        # Merge with stations to get station_name
+        if not df_stations.empty:
+            df_pm_display = df_pm.merge(
+                df_stations[['station_id', 'station_name', 'province']], 
+                on='station_id', 
+                how='left'
+            )
+            # Reorder columns
+            cols = ['unit_id', 'station_id', 'station_name', 'pm_status', 'days_until_pm',
+                    'last_pm_date', 'next_pm_date', 'technician', 'notes']
+            cols = [c for c in cols if c in df_pm_display.columns]
+            df_pm_display = df_pm_display[cols]
+        else:
+            df_pm_display = df_pm
+        
+        df_pm_filtered = df_pm_display[df_pm_display['pm_status'].isin(status_filter)]
         
         # Summary
         col1, col2, col3 = st.columns(3)
@@ -459,15 +490,16 @@ elif page == "🔧 ตาราง PM":
         col3.metric("ปกติ 🟢", len(df_pm[df_pm['pm_status'] == 'ปกติ']))
         
         st.dataframe(df_pm_filtered, use_container_width=True, hide_index=True)
+        
+        # Download
+        st.download_button(
+            label="📥 ดาวน์โหลด CSV",
+            data=df_pm_filtered.to_csv(index=False).encode('utf-8-sig'),
+            file_name=f"pm_schedule_{get_thai_time().replace(':', '-').replace(' ', '_')}.csv",
+            mime="text/csv"
+        )
     else:
         st.info("ยังไม่มีข้อมูล PM")
-    
-    st.download_button(
-        label="📥 ดาวน์โหลด CSV",
-        data=df_pm.to_csv(index=False).encode('utf-8-sig'),
-        file_name=f"pm_schedule_{get_thai_time().replace(':', '-').replace(' ', '_')}.csv",
-        mime="text/csv"
-    )
 
 elif page == "⚠️ บันทึกเคสเสีย":
     st.markdown("## ⚠️ บันทึกเคสเสีย")
@@ -549,7 +581,22 @@ elif page == "⚠️ บันทึกเคสเสีย":
     )
     
     if not df_incidents.empty and 'status' in df_incidents.columns:
-        df_inc_filtered = df_incidents[df_incidents['status'].isin(status_filter)]
+        # Merge with stations to get station_name
+        if not df_stations.empty:
+            df_inc_display = df_incidents.merge(
+                df_stations[['station_id', 'station_name', 'province']], 
+                on='station_id', 
+                how='left'
+            )
+            # Reorder columns
+            cols = ['case_id', 'report_date', 'station_id', 'station_name', 'issue_type', 
+                    'severity', 'status', 'technician', 'description', 'root_cause', 'resolved_date']
+            cols = [c for c in cols if c in df_inc_display.columns]
+            df_inc_display = df_inc_display[cols]
+        else:
+            df_inc_display = df_incidents
+        
+        df_inc_filtered = df_inc_display[df_inc_display['status'].isin(status_filter)]
         st.dataframe(df_inc_filtered, use_container_width=True, hide_index=True)
     else:
         st.info("ยังไม่มีข้อมูลเคสเสีย")
@@ -613,7 +660,14 @@ elif page == "📦 สต๊อกอะไหล่":
         
         # Table
         st.markdown("### รายการอะไหล่")
-        st.dataframe(df_parts, use_container_width=True, hide_index=True)
+        
+        # Reorder columns
+        cols = ['part_id', 'part_name', 'category', 'quantity', 'min_stock', 
+                'stock_status', 'unit_price', 'supplier']
+        cols = [c for c in cols if c in df_parts.columns]
+        df_parts_display = df_parts[cols]
+        
+        st.dataframe(df_parts_display, use_container_width=True, hide_index=True)
     else:
         st.info("ยังไม่มีข้อมูลอะไหล่")
 
@@ -638,8 +692,12 @@ elif page == "🗺️ แผนที่สถานี":
         st.map(map_data)
         
         st.markdown(f"### 📍 แสดง {len(map_data)} สถานี")
-        st.dataframe(df_map[['station_id', 'station_name', 'province', 'latitude', 'longitude']], 
-                     use_container_width=True, hide_index=True)
+        
+        # Display columns
+        cols = ['station_id', 'station_name', 'province', 'latitude', 'longitude']
+        cols = [c for c in cols if c in df_map.columns]
+        
+        st.dataframe(df_map[cols], use_container_width=True, hide_index=True)
     else:
         st.info("ยังไม่มีข้อมูลตำแหน่งสถานี")
 
