@@ -4,6 +4,7 @@ import requests
 from datetime import datetime, timedelta
 from supabase import create_client
 import time
+import io
 
 # ==========================================
 # PAGE CONFIG
@@ -14,6 +15,16 @@ st.set_page_config(
     layout="wide",
     initial_sidebar_state="expanded"
 )
+
+# ==========================================
+# TIMEZONE - เวลาไทย
+# ==========================================
+def get_thai_time():
+    """Get current time in Thailand timezone (UTC+7)"""
+    from datetime import timezone
+    utc_now = datetime.now(timezone.utc)
+    thai_time = utc_now + timedelta(hours=7)
+    return thai_time.strftime('%Y-%m-%d %H:%M')
 
 # ==========================================
 # SUPABASE CONNECTION
@@ -43,7 +54,7 @@ def load_stations():
                 return pd.DataFrame(response.data)
     except Exception as e:
         st.warning(f"Error loading stations: {e}")
-    return create_sample_stations()
+    return pd.DataFrame()
 
 def load_pm_schedule():
     """Load PM schedule from Supabase"""
@@ -54,7 +65,7 @@ def load_pm_schedule():
                 return pd.DataFrame(response.data)
     except Exception as e:
         st.warning(f"Error loading PM schedule: {e}")
-    return create_sample_pm()
+    return pd.DataFrame()
 
 def load_incidents():
     """Load incidents from Supabase"""
@@ -65,7 +76,7 @@ def load_incidents():
                 return pd.DataFrame(response.data)
     except Exception as e:
         st.warning(f"Error loading incidents: {e}")
-    return create_sample_incidents()
+    return pd.DataFrame()
 
 def load_spare_parts():
     """Load spare parts from Supabase"""
@@ -76,7 +87,7 @@ def load_spare_parts():
                 return pd.DataFrame(response.data)
     except Exception as e:
         st.warning(f"Error loading spare parts: {e}")
-    return create_sample_parts()
+    return pd.DataFrame()
 
 def load_flood_weather():
     """Load flood weather from Supabase"""
@@ -87,107 +98,21 @@ def load_flood_weather():
                 return pd.DataFrame(response.data)
     except Exception as e:
         st.warning(f"Error loading flood data: {e}")
-    return create_sample_flood()
+    return pd.DataFrame()
+
+def load_charger_units():
+    """Load charger units from Supabase"""
+    try:
+        if supabase:
+            response = supabase.table("charger_units").select("*").execute()
+            if response.data:
+                return pd.DataFrame(response.data)
+    except Exception as e:
+        st.warning(f"Error loading charger units: {e}")
+    return pd.DataFrame()
 
 # ==========================================
-# SAMPLE DATA (Fallback)
-# ==========================================
-def create_sample_stations():
-    import random
-    stations = []
-    provinces = ['กรุงเทพ', 'เชียงใหม่', 'ขอนแก่น', 'ชลบุรี', 'ภูเก็ต', 'นครราชสีมา', 'เพชรบูรณ์']
-    for i in range(1, 291):
-        stations.append({
-            'station_id': f'BYD-{i:03d}',
-            'station_name': f'EV Station {i}',
-            'province': random.choice(provinces),
-            'latitude': 13.7 + random.uniform(-5, 5),
-            'longitude': 100.5 + random.uniform(-3, 3),
-        })
-    return pd.DataFrame(stations)
-
-def create_sample_pm():
-    import random
-    pm_data = []
-    for i in range(1, 584):
-        days = random.randint(-120, 60)
-        if days < 0:
-            status = 'เกินกำหนด'
-        elif days <= 14:
-            status = 'ใกล้ถึง'
-        else:
-            status = 'ปกติ'
-        pm_data.append({
-            'unit_id': f'UNIT-{i:04d}',
-            'station_id': f'BYD-{(i % 290) + 1:03d}',
-            'last_pm_date': (datetime.now() - timedelta(days=random.randint(30, 180))).strftime('%Y-%m-%d'),
-            'days_until_pm': days,
-            'pm_status': status
-        })
-    return pd.DataFrame(pm_data)
-
-def create_sample_incidents():
-    import random
-    incidents = []
-    issue_types = ['หัวชาร์จเสีย', 'หน้าจอไม่ทำงาน', 'จ่ายไฟไม่ได้', 'ระบบชำระเงินขัดข้อง']
-    statuses = ['รอดำเนินการ', 'กำลังดำเนินการ', 'เสร็จสิ้น']
-    for i in range(1, 81):
-        incidents.append({
-            'case_id': f'INC-{i:04d}',
-            'report_date': (datetime.now() - timedelta(days=random.randint(1, 30))).strftime('%Y-%m-%d'),
-            'station_id': f'BYD-{random.randint(1, 290):03d}',
-            'issue_type': random.choice(issue_types),
-            'severity': random.choice(['วิกฤต', 'สูง', 'ปานกลาง', 'ต่ำ']),
-            'status': random.choices(statuses, weights=[30, 20, 50])[0]
-        })
-    return pd.DataFrame(incidents)
-
-def create_sample_parts():
-    import random
-    parts = []
-    part_names = ['หัวชาร์จ CCS2', 'หัวชาร์จ CHAdeMO', 'สาย Type 2', 'หน้าจอ 10 นิ้ว', 
-                  'เครื่องอ่าน RFID', 'Power Module 50kW', 'บอร์ดควบคุม', 'พัดลมระบายความร้อน']
-    for i, name in enumerate(part_names, 1):
-        qty = random.randint(0, 20)
-        if qty == 0:
-            status = 'หมด'
-        elif qty < 5:
-            status = 'ใกล้หมด'
-        else:
-            status = 'ปกติ'
-        parts.append({
-            'part_id': f'SP-{i:03d}',
-            'part_name': name,
-            'quantity': qty,
-            'min_stock': 5,
-            'stock_status': status
-        })
-    return pd.DataFrame(parts)
-
-def create_sample_flood():
-    import random
-    flood_data = []
-    for i in range(1, 291):
-        score = random.uniform(10, 70)
-        if score >= 80:
-            level = 'รุนแรง'
-        elif score >= 60:
-            level = 'สูง'
-        elif score >= 40:
-            level = 'ปานกลาง'
-        else:
-            level = 'ต่ำ'
-        flood_data.append({
-            'station_id': f'BYD-{i:03d}',
-            'rain_3d_total': round(random.uniform(0, 50), 1),
-            'rain_7d_total': round(random.uniform(0, 100), 1),
-            'risk_score': round(score, 1),
-            'risk_level': level
-        })
-    return pd.DataFrame(flood_data)
-
-# ==========================================
-# WEATHER API
+# WEATHER API - Open-Meteo
 # ==========================================
 def get_rain_forecast(lat, lon):
     """Get rain forecast from Open-Meteo API"""
@@ -201,6 +126,106 @@ def get_rain_forecast(lat, lon):
         pass
     return [0] * 7
 
+def calculate_risk_score(rain_3d, rain_7d, flood_history, drainage_quality, nearby_water):
+    """Calculate flood risk score"""
+    rain_score = min((rain_3d / 100) * 40, 40)
+    history_score = flood_history * 10
+    drainage_score = (5 - drainage_quality) * 5
+    water_score = nearby_water * 10
+    elevation_score = 5
+    
+    total = rain_score + history_score + drainage_score + water_score + elevation_score
+    return min(total, 100)
+
+def get_risk_level(score):
+    """Get risk level from score"""
+    if score >= 80:
+        return 'รุนแรง'
+    elif score >= 60:
+        return 'สูง'
+    elif score >= 40:
+        return 'ปานกลาง'
+    else:
+        return 'ต่ำ'
+
+def update_rain_data():
+    """Update rain data for all stations"""
+    if not supabase:
+        return False, "ไม่สามารถเชื่อมต่อ Database"
+    
+    try:
+        # Load stations
+        stations_response = supabase.table("stations").select("station_id, latitude, longitude, flood_history, drainage_quality, nearby_water").execute()
+        stations = stations_response.data
+        
+        updated = 0
+        total = len(stations)
+        progress_bar = st.progress(0)
+        status_text = st.empty()
+        
+        for i, station in enumerate(stations):
+            station_id = station['station_id']
+            lat = station.get('latitude', 13.7)
+            lon = station.get('longitude', 100.5)
+            
+            # Get rain forecast
+            rain = get_rain_forecast(lat, lon)
+            
+            rain_3d = sum(rain[:3])
+            rain_7d = sum(rain)
+            
+            # Calculate risk
+            risk_score = calculate_risk_score(
+                rain_3d, rain_7d,
+                station.get('flood_history', 0),
+                station.get('drainage_quality', 3),
+                station.get('nearby_water', 0)
+            )
+            risk_level = get_risk_level(risk_score)
+            
+            # Update flood_weather table
+            supabase.table("flood_weather").upsert({
+                'station_id': station_id,
+                'rain_day1': rain[0] if len(rain) > 0 else 0,
+                'rain_day2': rain[1] if len(rain) > 1 else 0,
+                'rain_day3': rain[2] if len(rain) > 2 else 0,
+                'rain_day4': rain[3] if len(rain) > 3 else 0,
+                'rain_day5': rain[4] if len(rain) > 4 else 0,
+                'rain_day6': rain[5] if len(rain) > 5 else 0,
+                'rain_day7': rain[6] if len(rain) > 6 else 0,
+                'rain_3d_total': round(rain_3d, 1),
+                'rain_7d_total': round(rain_7d, 1),
+                'risk_score': round(risk_score, 1),
+                'risk_level': risk_level,
+                'updated_at': datetime.utcnow().isoformat()
+            }, on_conflict='station_id').execute()
+            
+            updated += 1
+            progress_bar.progress((i + 1) / total)
+            status_text.text(f"กำลังอัปเดต: {station_id} ({i+1}/{total})")
+            
+            # Small delay to avoid API rate limit
+            time.sleep(0.1)
+        
+        progress_bar.empty()
+        status_text.empty()
+        return True, f"อัปเดตสำเร็จ {updated} สถานี"
+    
+    except Exception as e:
+        return False, f"Error: {str(e)}"
+
+# ==========================================
+# EXPORT FUNCTIONS
+# ==========================================
+def export_to_excel(dataframes_dict):
+    """Export multiple dataframes to Excel"""
+    output = io.BytesIO()
+    with pd.ExcelWriter(output, engine='openpyxl') as writer:
+        for sheet_name, df in dataframes_dict.items():
+            df.to_excel(writer, sheet_name=sheet_name, index=False)
+    output.seek(0)
+    return output
+
 # ==========================================
 # SIDEBAR
 # ==========================================
@@ -210,7 +235,7 @@ with st.sidebar:
     
     page = st.radio(
         "เมนู",
-        ["📊 แดชบอร์ด", "🌧️ ความเสี่ยงน้ำท่วม", "🔧 ตาราง PM", "⚠️ บันทึกเคสเสีย", "📦 สต๊อกอะไหล่"],
+        ["📊 แดชบอร์ด", "🌧️ ความเสี่ยงน้ำท่วม", "🔧 ตาราง PM", "⚠️ บันทึกเคสเสีย", "📦 สต๊อกอะไหล่", "🗺️ แผนที่สถานี"],
         label_visibility="collapsed"
     )
     
@@ -224,9 +249,9 @@ with st.sidebar:
     if supabase:
         st.success("✅ เชื่อมต่อ Database แล้ว")
     else:
-        st.warning("⚠️ ใช้ Sample Data")
+        st.warning("⚠️ ไม่สามารถเชื่อมต่อ Database")
     
-    st.markdown("##### 📱 Version 2.0")
+    st.markdown("##### 📱 Version 3.0")
     st.markdown("##### Made with Streamlit + Supabase")
 
 # ==========================================
@@ -237,27 +262,13 @@ df_pm = load_pm_schedule()
 df_incidents = load_incidents()
 df_parts = load_spare_parts()
 df_flood = load_flood_weather()
+df_chargers = load_charger_units()
 
 # Calculate KPIs
-if 'risk_level' in df_flood.columns:
-    flood_counts = df_flood['risk_level'].value_counts()
-else:
-    flood_counts = pd.Series({'ต่ำ': 290})
-
-if 'pm_status' in df_pm.columns:
-    pm_counts = df_pm['pm_status'].value_counts()
-else:
-    pm_counts = pd.Series({'ปกติ': 583})
-
-if 'status' in df_incidents.columns:
-    inc_counts = df_incidents['status'].value_counts()
-else:
-    inc_counts = pd.Series({'เสร็จสิ้น': 80})
-
-if 'stock_status' in df_parts.columns:
-    parts_counts = df_parts['stock_status'].value_counts()
-else:
-    parts_counts = pd.Series({'ปกติ': 10})
+flood_counts = df_flood['risk_level'].value_counts() if 'risk_level' in df_flood.columns else pd.Series()
+pm_counts = df_pm['pm_status'].value_counts() if 'pm_status' in df_pm.columns else pd.Series()
+inc_counts = df_incidents['status'].value_counts() if 'status' in df_incidents.columns else pd.Series()
+parts_counts = df_parts['stock_status'].value_counts() if 'stock_status' in df_parts.columns else pd.Series()
 
 # ==========================================
 # MAIN CONTENT
@@ -267,17 +278,17 @@ if page == "📊 แดชบอร์ด":
     col_title, col_btn = st.columns([3, 1])
     with col_title:
         st.markdown("## 🚗 แดชบอร์ดสถานีชาร์จ EV")
-        st.caption(f"อัปเดตล่าสุด: {datetime.now().strftime('%Y-%m-%d %H:%M')}")
+        st.caption(f"อัปเดตล่าสุด: {get_thai_time()}")
     
     with col_btn:
-        if st.button("🔄 อัปเดตข้อมูลฝน", type="primary", use_container_width=True):
-            with st.spinner('กำลังอัปเดตข้อมูล...'):
-                progress = st.progress(0)
-                for i in range(100):
-                    time.sleep(0.02)
-                    progress.progress(i + 1)
-            st.success('✅ อัปเดตเสร็จสิ้น!')
-            st.rerun()
+        if st.button("🌧️ อัปเดตข้อมูลฝน", type="primary", use_container_width=True):
+            success, message = update_rain_data()
+            if success:
+                st.success(f'✅ {message}')
+                time.sleep(1)
+                st.rerun()
+            else:
+                st.error(f'❌ {message}')
     
     # KPI Cards
     st.markdown("### 📈 สรุปภาพรวม")
@@ -316,33 +327,137 @@ if page == "📊 แดชบอร์ด":
     
     with col_a:
         risk_count = flood_counts.get('ปานกลาง', 0) + flood_counts.get('สูง', 0) + flood_counts.get('รุนแรง', 0)
-        st.warning(f"🌧️ **สถานีเสี่ยงน้ำท่วม:** {risk_count} สถานี")
-        st.error(f"🔧 **เครื่อง PM เกินกำหนด:** {pm_counts.get('เกินกำหนด', 0)} เครื่อง")
+        st.info(f"🌧️ **สถานีเสี่ยงน้ำท่วม:** {risk_count} สถานี")
+        st.warning(f"🔧 **เครื่อง PM เกินกำหนด:** {pm_counts.get('เกินกำหนด', 0)} เครื่อง")
     
     with col_b:
         parts_alert = parts_counts.get('หมด', 0) + parts_counts.get('ใกล้หมด', 0)
         st.error(f"📦 **อะไหล่หมด/ใกล้หมด:** {parts_alert} รายการ")
         st.warning(f"⚠️ **เคสเสียรอดำเนินการ:** {inc_counts.get('รอดำเนินการ', 0)} เคส")
+    
+    # Export Button
+    st.markdown("---")
+    st.markdown("### 📥 Export ข้อมูล")
+    
+    col_exp1, col_exp2, col_exp3 = st.columns(3)
+    
+    with col_exp1:
+        if st.button("📊 Export รายงานทั้งหมด", use_container_width=True):
+            excel_data = export_to_excel({
+                'สถานี': df_stations,
+                'ความเสี่ยงน้ำท่วม': df_flood,
+                'ตารางPM': df_pm,
+                'เคสเสีย': df_incidents,
+                'อะไหล่': df_parts
+            })
+            st.download_button(
+                label="⬇️ ดาวน์โหลด Excel",
+                data=excel_data,
+                file_name=f"EV_Report_{get_thai_time().replace(':', '-').replace(' ', '_')}.xlsx",
+                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+            )
 
 elif page == "🌧️ ความเสี่ยงน้ำท่วม":
     st.markdown("## 🌧️ ความเสี่ยงน้ำท่วม")
+    st.caption(f"อัปเดตล่าสุด: {get_thai_time()}")
+    
+    # Update button
+    col1, col2 = st.columns([3, 1])
+    with col2:
+        if st.button("🔄 อัปเดตข้อมูลฝน", type="primary", use_container_width=True):
+            success, message = update_rain_data()
+            if success:
+                st.success(f'✅ {message}')
+                time.sleep(1)
+                st.rerun()
+            else:
+                st.error(f'❌ {message}')
     
     # Filters
-    risk_filter = st.multiselect("กรองตามระดับเสี่ยง", ['รุนแรง', 'สูง', 'ปานกลาง', 'ต่ำ'], default=['รุนแรง', 'สูง', 'ปานกลาง'])
+    risk_filter = st.multiselect(
+        "กรองตามระดับเสี่ยง", 
+        ['รุนแรง', 'สูง', 'ปานกลาง', 'ต่ำ'], 
+        default=['รุนแรง', 'สูง', 'ปานกลาง']
+    )
     
-    if 'risk_level' in df_flood.columns:
+    if not df_flood.empty and 'risk_level' in df_flood.columns:
         df_filtered = df_flood[df_flood['risk_level'].isin(risk_filter)]
+        
+        # Summary
+        col1, col2, col3, col4 = st.columns(4)
+        col1.metric("รุนแรง 🔴", len(df_filtered[df_filtered['risk_level'] == 'รุนแรง']))
+        col2.metric("สูง 🟠", len(df_filtered[df_filtered['risk_level'] == 'สูง']))
+        col3.metric("ปานกลาง 🟡", len(df_filtered[df_filtered['risk_level'] == 'ปานกลาง']))
+        col4.metric("ต่ำ 🟢", len(df_filtered[df_filtered['risk_level'] == 'ต่ำ']))
+        
+        # Table
         st.dataframe(df_filtered, use_container_width=True, hide_index=True)
+        
+        # Download
+        st.download_button(
+            label="📥 ดาวน์โหลด CSV",
+            data=df_filtered.to_csv(index=False).encode('utf-8-sig'),
+            file_name=f"flood_risk_{get_thai_time().replace(':', '-').replace(' ', '_')}.csv",
+            mime="text/csv"
+        )
     else:
         st.info("ยังไม่มีข้อมูลความเสี่ยงน้ำท่วม")
 
 elif page == "🔧 ตาราง PM":
     st.markdown("## 🔧 ตาราง PM")
+    st.caption(f"อัปเดตล่าสุด: {get_thai_time()}")
     
-    status_filter = st.multiselect("กรองตามสถานะ", ['เกินกำหนด', 'ใกล้ถึง', 'ปกติ'], default=['เกินกำหนด', 'ใกล้ถึง'])
+    # Add PM record form
+    with st.expander("➕ บันทึกงาน PM"):
+        col1, col2 = st.columns(2)
+        with col1:
+            pm_unit = st.selectbox(
+                "รหัสเครื่อง", 
+                df_pm['unit_id'].unique() if not df_pm.empty else []
+            )
+            pm_date = st.date_input("วันที่ทำ PM", datetime.now())
+        with col2:
+            pm_technician = st.text_input("ช่างผู้ทำ")
+            pm_notes = st.text_area("หมายเหตุ")
+        
+        if st.button("💾 บันทึก PM", type="primary"):
+            if pm_unit and pm_technician and supabase:
+                try:
+                    # Update PM record
+                    next_pm = pm_date + timedelta(days=90)
+                    supabase.table("pm_schedule").update({
+                        "last_pm_date": pm_date.isoformat(),
+                        "next_pm_date": next_pm.isoformat(),
+                        "days_until_pm": 90,
+                        "pm_status": "ปกติ",
+                        "technician": pm_technician,
+                        "notes": pm_notes,
+                        "updated_at": datetime.utcnow().isoformat()
+                    }).eq("unit_id", pm_unit).execute()
+                    st.success(f"✅ บันทึก PM สำเร็จ: {pm_unit}")
+                    time.sleep(1)
+                    st.rerun()
+                except Exception as e:
+                    st.error(f"Error: {e}")
+            else:
+                st.warning("กรุณากรอกข้อมูลให้ครบ")
     
-    if 'pm_status' in df_pm.columns:
+    # Filters
+    status_filter = st.multiselect(
+        "กรองตามสถานะ", 
+        ['เกินกำหนด', 'ใกล้ถึง', 'ปกติ'], 
+        default=['เกินกำหนด', 'ใกล้ถึง']
+    )
+    
+    if not df_pm.empty and 'pm_status' in df_pm.columns:
         df_pm_filtered = df_pm[df_pm['pm_status'].isin(status_filter)]
+        
+        # Summary
+        col1, col2, col3 = st.columns(3)
+        col1.metric("เกินกำหนด 🔴", len(df_pm[df_pm['pm_status'] == 'เกินกำหนด']))
+        col2.metric("ใกล้ถึง 🟡", len(df_pm[df_pm['pm_status'] == 'ใกล้ถึง']))
+        col3.metric("ปกติ 🟢", len(df_pm[df_pm['pm_status'] == 'ปกติ']))
+        
         st.dataframe(df_pm_filtered, use_container_width=True, hide_index=True)
     else:
         st.info("ยังไม่มีข้อมูล PM")
@@ -350,24 +465,31 @@ elif page == "🔧 ตาราง PM":
     st.download_button(
         label="📥 ดาวน์โหลด CSV",
         data=df_pm.to_csv(index=False).encode('utf-8-sig'),
-        file_name=f"pm_schedule_{datetime.now().strftime('%Y%m%d')}.csv",
+        file_name=f"pm_schedule_{get_thai_time().replace(':', '-').replace(' ', '_')}.csv",
         mime="text/csv"
     )
 
 elif page == "⚠️ บันทึกเคสเสีย":
     st.markdown("## ⚠️ บันทึกเคสเสีย")
+    st.caption(f"อัปเดตล่าสุด: {get_thai_time()}")
     
     # Add new incident form
     with st.expander("➕ เพิ่มเคสใหม่"):
         col1, col2 = st.columns(2)
         with col1:
-            new_station = st.text_input("รหัสสถานี")
-            new_issue = st.selectbox("ประเภทปัญหา", ['หัวชาร์จเสีย', 'หน้าจอไม่ทำงาน', 'จ่ายไฟไม่ได้', 'ระบบชำระเงินขัดข้อง'])
+            new_station = st.selectbox(
+                "รหัสสถานี",
+                df_stations['station_id'].unique() if not df_stations.empty else []
+            )
+            new_issue = st.selectbox(
+                "ประเภทปัญหา", 
+                ['หัวชาร์จเสีย', 'หน้าจอไม่ทำงาน', 'จ่ายไฟไม่ได้', 'ระบบชำระเงินขัดข้อง', 'อื่นๆ']
+            )
         with col2:
             new_severity = st.selectbox("ความรุนแรง", ['วิกฤต', 'สูง', 'ปานกลาง', 'ต่ำ'])
             new_desc = st.text_area("รายละเอียด")
         
-        if st.button("บันทึกเคส", type="primary"):
+        if st.button("💾 บันทึกเคส", type="primary"):
             if new_station and supabase:
                 try:
                     case_id = f"INC-{datetime.now().strftime('%Y%m%d%H%M%S')}"
@@ -377,19 +499,56 @@ elif page == "⚠️ บันทึกเคสเสีย":
                         "issue_type": new_issue,
                         "severity": new_severity,
                         "description": new_desc,
-                        "status": "รอดำเนินการ"
+                        "status": "รอดำเนินการ",
+                        "report_date": datetime.now().date().isoformat()
                     }).execute()
                     st.success(f"✅ บันทึกเคส {case_id} เรียบร้อย!")
+                    time.sleep(1)
                     st.rerun()
                 except Exception as e:
                     st.error(f"Error: {e}")
             else:
-                st.warning("กรุณากรอกรหัสสถานี")
+                st.warning("กรุณาเลือกสถานี")
+    
+    # Update incident status
+    with st.expander("✏️ อัปเดตสถานะเคส"):
+        col1, col2 = st.columns(2)
+        with col1:
+            update_case = st.selectbox(
+                "เลือกเคส",
+                df_incidents['case_id'].unique() if not df_incidents.empty else []
+            )
+            update_status = st.selectbox("สถานะใหม่", ['รอดำเนินการ', 'กำลังดำเนินการ', 'เสร็จสิ้น'])
+        with col2:
+            update_tech = st.text_input("ผู้ซ่อม")
+            update_cause = st.text_area("สาเหตุ")
+        
+        if st.button("💾 อัปเดตเคส", type="primary", key="update_inc"):
+            if update_case and supabase:
+                try:
+                    update_data = {
+                        "status": update_status,
+                        "technician": update_tech,
+                        "root_cause": update_cause
+                    }
+                    if update_status == 'เสร็จสิ้น':
+                        update_data["resolved_date"] = datetime.now().date().isoformat()
+                    
+                    supabase.table("incidents").update(update_data).eq("case_id", update_case).execute()
+                    st.success(f"✅ อัปเดตเคส {update_case} เรียบร้อย!")
+                    time.sleep(1)
+                    st.rerun()
+                except Exception as e:
+                    st.error(f"Error: {e}")
     
     # Display incidents
-    status_filter = st.multiselect("กรองตามสถานะ", ['รอดำเนินการ', 'กำลังดำเนินการ', 'เสร็จสิ้น'], default=['รอดำเนินการ', 'กำลังดำเนินการ'])
+    status_filter = st.multiselect(
+        "กรองตามสถานะ", 
+        ['รอดำเนินการ', 'กำลังดำเนินการ', 'เสร็จสิ้น'], 
+        default=['รอดำเนินการ', 'กำลังดำเนินการ']
+    )
     
-    if 'status' in df_incidents.columns:
+    if not df_incidents.empty and 'status' in df_incidents.columns:
         df_inc_filtered = df_incidents[df_incidents['status'].isin(status_filter)]
         st.dataframe(df_inc_filtered, use_container_width=True, hide_index=True)
     else:
@@ -397,16 +556,92 @@ elif page == "⚠️ บันทึกเคสเสีย":
 
 elif page == "📦 สต๊อกอะไหล่":
     st.markdown("## 📦 สต๊อกอะไหล่")
+    st.caption(f"อัปเดตล่าสุด: {get_thai_time()}")
+    
+    # Update stock form
+    with st.expander("✏️ อัปเดตสต๊อก"):
+        col1, col2 = st.columns(2)
+        with col1:
+            update_part = st.selectbox(
+                "เลือกอะไหล่",
+                df_parts['part_id'].unique() if not df_parts.empty else []
+            )
+            action = st.radio("การดำเนินการ", ['เบิก', 'รับเข้า'])
+        with col2:
+            qty_change = st.number_input("จำนวน", min_value=1, value=1)
+        
+        if st.button("💾 อัปเดตสต๊อก", type="primary"):
+            if update_part and supabase:
+                try:
+                    # Get current quantity
+                    current = supabase.table("spare_parts").select("quantity, min_stock").eq("part_id", update_part).execute()
+                    if current.data:
+                        current_qty = current.data[0]['quantity']
+                        min_stock = current.data[0]['min_stock']
+                        
+                        if action == 'เบิก':
+                            new_qty = max(0, current_qty - qty_change)
+                        else:
+                            new_qty = current_qty + qty_change
+                        
+                        # Determine status
+                        if new_qty == 0:
+                            new_status = 'หมด'
+                        elif new_qty < min_stock:
+                            new_status = 'ใกล้หมด'
+                        else:
+                            new_status = 'ปกติ'
+                        
+                        supabase.table("spare_parts").update({
+                            "quantity": new_qty,
+                            "stock_status": new_status,
+                            "updated_at": datetime.utcnow().isoformat()
+                        }).eq("part_id", update_part).execute()
+                        
+                        st.success(f"✅ อัปเดตสต๊อก {update_part}: {current_qty} → {new_qty}")
+                        time.sleep(1)
+                        st.rerun()
+                except Exception as e:
+                    st.error(f"Error: {e}")
     
     # Summary
-    col1, col2, col3 = st.columns(3)
-    col1.metric("หมด", parts_counts.get('หมด', 0))
-    col2.metric("ใกล้หมด", parts_counts.get('ใกล้หมด', 0))
-    col3.metric("ปกติ", parts_counts.get('ปกติ', 0))
+    if not df_parts.empty:
+        col1, col2, col3 = st.columns(3)
+        col1.metric("หมด 🔴", parts_counts.get('หมด', 0))
+        col2.metric("ใกล้หมด 🟡", parts_counts.get('ใกล้หมด', 0))
+        col3.metric("ปกติ 🟢", parts_counts.get('ปกติ', 0))
+        
+        # Table
+        st.markdown("### รายการอะไหล่")
+        st.dataframe(df_parts, use_container_width=True, hide_index=True)
+    else:
+        st.info("ยังไม่มีข้อมูลอะไหล่")
+
+elif page == "🗺️ แผนที่สถานี":
+    st.markdown("## 🗺️ แผนที่สถานี")
+    st.caption(f"แสดงตำแหน่งสถานีทั้งหมด {len(df_stations)} สถานี")
     
-    # Table
-    st.markdown("### รายการอะไหล่")
-    st.dataframe(df_parts, use_container_width=True, hide_index=True)
+    if not df_stations.empty and 'latitude' in df_stations.columns and 'longitude' in df_stations.columns:
+        # Filter by province
+        provinces = ['ทั้งหมด'] + sorted(df_stations['province'].dropna().unique().tolist())
+        selected_province = st.selectbox("กรองตามจังหวัด", provinces)
+        
+        if selected_province != 'ทั้งหมด':
+            df_map = df_stations[df_stations['province'] == selected_province]
+        else:
+            df_map = df_stations
+        
+        # Prepare map data
+        map_data = df_map[['latitude', 'longitude']].dropna()
+        map_data.columns = ['lat', 'lon']
+        
+        st.map(map_data)
+        
+        st.markdown(f"### 📍 แสดง {len(map_data)} สถานี")
+        st.dataframe(df_map[['station_id', 'station_name', 'province', 'latitude', 'longitude']], 
+                     use_container_width=True, hide_index=True)
+    else:
+        st.info("ยังไม่มีข้อมูลตำแหน่งสถานี")
 
 # Auto refresh
 if auto_refresh:
