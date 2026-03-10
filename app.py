@@ -126,30 +126,92 @@ def get_rain_forecast(lat, lon):
         pass
     return [0] * 7
 
-def calculate_risk_score(rain_3d, rain_7d, flood_history, drainage_quality, nearby_water):
-    """Calculate flood risk score"""
-    rain_score = min((rain_3d / 100) * 40, 40)
-    history_score = flood_history * 10
-    drainage_score = (5 - drainage_quality) * 5
-    water_score = nearby_water * 10
-    elevation_score = 5
-    
-    total = rain_score + history_score + drainage_score + water_score + elevation_score
-    return min(total, 100)
+# ==========================================
+# NEW FORMULA v3.2 - ฝนเป็นหลัก + ปัจจัยพื้นที่เป็นตัวคูณ
+# ==========================================
+def calculate_rain_score(rain_3d):
+    """
+    คำนวณคะแนนจากปริมาณฝน 3 วัน
+    - ฝน 0-10mm = 0-15 คะแนน
+    - ฝน 10-30mm = 15-35 คะแนน
+    - ฝน 30-60mm = 35-55 คะแนน
+    - ฝน 60-100mm = 55-75 คะแนน
+    - ฝน 100mm+ = 75-90 คะแนน
+    """
+    if rain_3d <= 0:
+        return 0
+    elif rain_3d <= 10:
+        return rain_3d * 1.5  # 0-15
+    elif rain_3d <= 30:
+        return 15 + (rain_3d - 10) * 1.0  # 15-35
+    elif rain_3d <= 60:
+        return 35 + (rain_3d - 30) * 0.67  # 35-55
+    elif rain_3d <= 100:
+        return 55 + (rain_3d - 60) * 0.5  # 55-75
+    else:
+        return min(75 + (rain_3d - 100) * 0.15, 90)  # 75-90 (max 90)
 
-def get_risk_level(score):
-    """Get risk level from score"""
-    if score >= 80:
+def calculate_location_factor(flood_history, drainage_quality, nearby_water):
+    """
+    คำนวณตัวคูณจากปัจจัยพื้นที่
+    - flood_history: 1=ไม่เคย(×1.0), 2=เคย 1-2 ครั้ง(×1.15), 3=ท่วมบ่อย(×1.3)
+    - drainage_quality: 1=แย่มาก(×1.2), 2=พอใช้(×1.1), 3=ดี(×1.0), 4=ดีมาก(×0.9)
+    - nearby_water: 0=ไม่ใกล้(×1.0), 1=ใกล้(×1.15)
+    """
+    # Flood history factor
+    if flood_history >= 3:
+        flood_factor = 1.3
+    elif flood_history == 2:
+        flood_factor = 1.15
+    else:
+        flood_factor = 1.0
+    
+    # Drainage factor
+    if drainage_quality <= 1:
+        drain_factor = 1.2
+    elif drainage_quality == 2:
+        drain_factor = 1.1
+    elif drainage_quality == 3:
+        drain_factor = 1.0
+    else:
+        drain_factor = 0.9
+    
+    # Nearby water factor
+    water_factor = 1.15 if nearby_water >= 1 else 1.0
+    
+    return flood_factor * drain_factor * water_factor
+
+def calculate_risk_score_v2(rain_3d, flood_history, drainage_quality, nearby_water):
+    """
+    สูตรใหม่ v3.2: Risk = Rain_Score × Location_Factor
+    - ไม่มีฝน = คะแนน 0 (ไม่ว่าปัจจัยพื้นที่จะเป็นอย่างไร)
+    - มีฝน = คะแนนฝน × ตัวคูณพื้นที่
+    """
+    rain_score = calculate_rain_score(rain_3d)
+    location_factor = calculate_location_factor(flood_history, drainage_quality, nearby_water)
+    
+    total = rain_score * location_factor
+    return min(total, 100)  # Cap at 100
+
+def get_risk_level_v2(score):
+    """
+    เกณฑ์ระดับความเสี่ยงใหม่ (แม่นยำกว่า)
+    - 70-100: รุนแรง (ต้องเตรียมรับมือทันที)
+    - 50-69: สูง (ควรเฝ้าระวัง)
+    - 30-49: ปานกลาง (ติดตามสถานการณ์)
+    - 0-29: ต่ำ (ปกติ)
+    """
+    if score >= 70:
         return 'รุนแรง'
-    elif score >= 60:
+    elif score >= 50:
         return 'สูง'
-    elif score >= 40:
+    elif score >= 30:
         return 'ปานกลาง'
     else:
         return 'ต่ำ'
 
 def update_rain_data():
-    """Update rain data for all stations"""
+    """Update rain data for all stations with new formula"""
     if not supabase:
         return False, "ไม่สามารถเชื่อมต่อ Database"
     
@@ -174,14 +236,14 @@ def update_rain_data():
             rain_3d = sum(rain[:3])
             rain_7d = sum(rain)
             
-            # Calculate risk
-            risk_score = calculate_risk_score(
-                rain_3d, rain_7d,
-                station.get('flood_history', 0),
+            # Calculate risk with NEW formula
+            risk_score = calculate_risk_score_v2(
+                rain_3d,
+                station.get('flood_history', 1),
                 station.get('drainage_quality', 3),
                 station.get('nearby_water', 0)
             )
-            risk_level = get_risk_level(risk_score)
+            risk_level = get_risk_level_v2(risk_score)
             
             # Update flood_weather table
             supabase.table("flood_weather").upsert({
@@ -251,7 +313,8 @@ with st.sidebar:
     else:
         st.warning("⚠️ ไม่สามารถเชื่อมต่อ Database")
     
-    st.markdown("##### 📱 Version 3.1")
+    st.markdown("##### 📱 Version 3.2")
+    st.markdown("##### 🧮 สูตรใหม่: ฝนเป็นหลัก")
     st.markdown("##### Made with Streamlit + Supabase")
 
 # ==========================================
@@ -334,6 +397,36 @@ if page == "📊 แดชบอร์ด":
         parts_alert = parts_counts.get('หมด', 0) + parts_counts.get('ใกล้หมด', 0)
         st.error(f"📦 **อะไหล่หมด/ใกล้หมด:** {parts_alert} รายการ")
         st.warning(f"⚠️ **เคสเสียรอดำเนินการ:** {inc_counts.get('รอดำเนินการ', 0)} เคส")
+    
+    # Formula Info
+    with st.expander("📊 สูตรคำนวณความเสี่ยงน้ำท่วม v3.2"):
+        st.markdown("""
+        **หลักการ:** ฝนเป็นปัจจัยหลัก + ปัจจัยพื้นที่เป็นตัวคูณ
+        
+        ```
+        Risk Score = Rain_Score × Location_Factor
+        ```
+        
+        **Rain Score (จากฝน 3 วัน):**
+        | ฝน (mm) | คะแนน |
+        |---------|-------|
+        | 0-10 | 0-15 |
+        | 10-30 | 15-35 |
+        | 30-60 | 35-55 |
+        | 60-100 | 55-75 |
+        | 100+ | 75-90 |
+        
+        **Location Factor:**
+        - ประวัติท่วม: ไม่เคย(×1.0), เคย 1-2 ครั้ง(×1.15), ท่วมบ่อย(×1.3)
+        - ระบบระบายน้ำ: แย่(×1.2), พอใช้(×1.1), ดี(×1.0), ดีมาก(×0.9)
+        - ใกล้แหล่งน้ำ: ไม่ใกล้(×1.0), ใกล้(×1.15)
+        
+        **ระดับความเสี่ยง:**
+        - 🔴 รุนแรง: 70-100
+        - 🟠 สูง: 50-69
+        - 🟡 ปานกลาง: 30-49
+        - 🟢 ต่ำ: 0-29
+        """)
     
     # Export Button
     st.markdown("---")
